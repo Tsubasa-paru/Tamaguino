@@ -11,6 +11,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <EEPROM.h>
 
 #define OLED_RESET 4
 Adafruit_SSD1306 display(OLED_RESET);
@@ -25,6 +26,34 @@ int button1State = 0;
 int button2State = 0;
 int button3State = 0;
 
+// セーブデータの構造体
+struct SaveData {
+  float hunger;
+  float happiness;
+  float health;
+  float discipline;
+  float weight;
+  float age;
+  int poops[3];
+};
+
+//加速度センサー
+//const int KXR94_2050_ADDR = 0x1E;
+const float MS2 = 9.80665;
+const float OFFSET_VOLTAGE = 2500.0;
+const float SUPPLY_VOLTAGE = 5;
+int16_t ax, ay, az, axyz;
+
+//歩数
+const float ONE_G_THRESHOLD_LOW = 8.8;   // 1G より低くなった事を認識する重力閾値
+const float ONE_G_THRESHOLD_HIGH = 11.0;  // 1G より高くなった事を認識する重力閾値
+const float STEP_THRESHOLD = 1.9;        // 歩数をカウントする重力閾値
+const int INTERVAL = 1;                  // 一定時間（秒）
+
+int stepCount = 0;
+bool isLowDetected = false;
+bool isHighDetected = false;
+unsigned long previousHighTime = 0;
 
 
 // splash 48x26
@@ -350,10 +379,10 @@ int menu=0;
 int subMenu=1;
 bool menuDepth=false;
 bool justOpened=false;
-#define MENUSIZE 8
-#define STRING_SIZE 11
+#define MENUSIZE 11
+#define STRING_SIZE 15
 
-const char mainMenu[MENUSIZE][8][STRING_SIZE] PROGMEM = {
+const char mainMenu[MENUSIZE][9][STRING_SIZE] PROGMEM = {
   {"food","apple","steak","water",NULL},
   {"game",NULL},
   {"sleep",NULL},
@@ -361,10 +390,10 @@ const char mainMenu[MENUSIZE][8][STRING_SIZE] PROGMEM = {
   {"doctor",NULL},
   {"discipline",NULL},
   {"stats","hunger","happiness","health","discipline","weight","age",NULL},
-  {"settings","sound",
-    //"something",
-    NULL
-  },
+  {"settings","sound",NULL},
+  {"save",NULL},
+  {"acceleration",NULL},
+  {"step count",NULL}
 };
 
 /* ------- PET STATS ------- */
@@ -410,6 +439,58 @@ int poops [3] = {
   0,0,0,
 };
 
+// セーブ関数
+void saveGame() {
+  SaveData saveData = {
+    hunger, happiness, health, discipline, weight, age, 
+    { poops[0], poops[1], poops[2] }
+  };
+  EEPROM.put(0, saveData);
+}
+
+// ロード関数
+void loadGame() {
+  SaveData saveData;
+  EEPROM.get(0, saveData);
+  
+  hunger = saveData.hunger;
+  happiness = saveData.happiness; 
+  health = saveData.health;
+  discipline = saveData.discipline;
+  weight = saveData.weight;
+  age = saveData.age;
+  poops[0] = saveData.poops[0];
+  poops[1] = saveData.poops[1]; 
+  poops[2] = saveData.poops[2];
+}
+
+// 加速度データの取得
+void getAcceleration(float* x, float* y, float* z, float* xyz) {
+  //*x = analogRead(A0);
+  //*y = analogRead(A1);
+  //*z = analogRead(A2);
+  
+  *x = (analogRead(A0) / 1024.0) * SUPPLY_VOLTAGE * 1000;
+  *y = (analogRead(A1) / 1024.0) * SUPPLY_VOLTAGE * 1000;
+  *z = (analogRead(A2) / 1024.0) * SUPPLY_VOLTAGE * 1000;
+
+  *x -= OFFSET_VOLTAGE;
+  *y -= OFFSET_VOLTAGE;
+  *z -= OFFSET_VOLTAGE;
+
+  *x /= 1000.0;
+  *y /= 1000.0;
+  *z /= 1000.0;
+
+  *x *= MS2;
+  *y *= MS2;
+  *z *= MS2;
+
+  *xyz = sqrt((*x) * (*x) + (*y) * (*y) + (*z) * (*z));  // 合成加速度の計算
+}
+
+
+
 void setup() {
   pinMode(button1Pin, INPUT);
   pinMode(button2Pin, INPUT);
@@ -446,7 +527,15 @@ void setup() {
 
   
   display.clearDisplay();
-  
+ 
+
+  //加速度
+  Serial.begin(9600);
+  //Wire.begin();
+  //Wire.beginTransmission(KXR94_2050_ADDR);
+  //Wire.write(0x1B);  // CTRL_REG1 (Control Register 1)
+  //Wire.write(0x00);  // Normal mode, 50Hz
+  //Wire.endTransmission();
 }
 
 
@@ -456,6 +545,40 @@ void loop() {
   button1State = digitalRead(button1Pin);
   button2State = digitalRead(button2Pin);
   button3State = digitalRead(button3Pin);
+
+  // 加速度データの取得
+  float ax, ay, az, axyz;
+  getAcceleration(&ax, &ay, &az, &axyz);
+
+  // 歩数のカウント
+  unsigned long currentTime = millis();
+
+  //Serial.println(axyz);
+
+  if (axyz <= ONE_G_THRESHOLD_LOW) {
+    isLowDetected = true;
+    //Serial.println("axyz is below ONE_G_THRESHOLD_LOW");
+  }
+
+  if (isLowDetected && axyz >= ONE_G_THRESHOLD_HIGH && axyz - ONE_G_THRESHOLD_LOW >= STEP_THRESHOLD) {
+    isHighDetected = true;
+    isLowDetected = false;
+    previousHighTime = currentTime;
+    //Serial.println("axyz is above ONE_G_THRESHOLD_HIGH");
+  }
+
+  if (isHighDetected && (currentTime - previousHighTime <= INTERVAL)) {
+    stepCount++;
+    isHighDetected = false;
+    Serial.print("Step detected! Total steps: ");
+    Serial.println(stepCount);
+  }
+
+  /*if (currentTime - previousHighTime > INTERVAL) {
+    isHighDetected = false;
+    isLowDetected = false;
+  }*/
+
 
   //char* str = "";
   
@@ -1166,6 +1289,10 @@ void loop() {
           case 801:
             soundEnabled=!soundEnabled;  
           break; 
+
+          case 901:
+           saveGame();
+          break;
       }
       action=0;
     }
@@ -1221,7 +1348,26 @@ void loop() {
         }else{
           display.println(F("off"));
         }
-      }    
+      }
+      // 加速度データの表示
+      if (setting == 1001) {
+        display.setCursor(0, 16);
+        display.print("X: ");
+        display.print(ax);
+        display.print("Y: ");
+        display.println(ay);
+        display.print("Z: ");
+        display.print(az);
+        display.print("XYZ: ");
+        display.println(axyz);
+        display.println("m/s^2");
+      }  
+      // 歩数の表示
+      if (setting == 1101) {
+        display.setCursor(0, 16);
+        display.print("Steps: ");
+        display.println(stepCount);
+      }
     }
   
     //display notification
@@ -1294,9 +1440,6 @@ void loop() {
     }
   }
 }
-
-
-
 
 
 
