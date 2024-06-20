@@ -495,7 +495,7 @@ void loop() {
 
     if(poopometer>=10){
       poopometer=countPoops();
-      poops[round(poopometer)]=random(20,display.width()+32);
+      poops[(int)round(poopometer)]=random(20,display.width()+32);
       if(soundEnabled){
         tone(sound,200,50);
       }
@@ -702,7 +702,7 @@ void loop() {
       display.fillCircle(sunXPos,2*sunRadius,sunRadius,WHITE);
       display.fillCircle(sunXPos-moonShadow,2*sunRadius,sunRadius,BLACK);
       //if(walkPos == 5){
-      if(round(cloud1XPos) % 5 == 0){
+      if((int)round(cloud1XPos) % 5 == 0){
         for(int i=0;i<6;i++){
           stars[i][0]=random(0,display.width());
           stars[i][1]=random(0,10);
@@ -875,7 +875,7 @@ void loop() {
         display.print(score);
       }
 
-      if(paused && round(cloud1XPos)%2==0){
+      if(paused && (int)round(cloud1XPos)%2==0){
         display.fillRect(24,11,80,15,BLACK);
         display.fillRect(25,12,78,13,WHITE);
         display.setCursor(47,15);
@@ -893,7 +893,7 @@ void loop() {
       }else{
         display.drawBitmap(walkXPos, 29, dinoWalk[walkPos+walkDirOffset] , 48, 24, WHITE);
         if(walkRight){
-          if(round(cloud1XPos) % 3 ==0){
+          if((int)round(cloud1XPos) % 3 ==0){
             display.setCursor(walkXPos+48,36);
             display.print(F("Z"));
           }else{
@@ -901,7 +901,7 @@ void loop() {
             display.print(F("z"));
           }
         }else{
-          if(round(cloud1XPos) % 3 ==0){
+          if((int)round(cloud1XPos) % 3 ==0){
             display.setCursor(walkXPos-4,36);
             display.print(F("Z"));
           }else{
@@ -1288,7 +1288,9 @@ void loop() {
         delay(200);
       }
       noTone(sound);
-      asm volatile ("  jmp 0");
+      //asm volatile ("  jmp 0");
+      //void(* resetFunc) (void) = 0;
+      //resetFunc();  
     }
   }
 }
